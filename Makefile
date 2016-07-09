@@ -9,17 +9,24 @@ $(BUILD)/%.o: %.c
 	mkdir -p $(BUILD)
 	$(CC) $< -o $@
 
-EXE=$(BUILD)/repro
+EXE=repro parrot
+EXE := $(addprefix $(BUILD)/, $(EXE))
 
 repro_OBJS += runner.o
+repro_OBJS := $(addprefix $(BUILD)/, $(repro_OBJS))
 
-OBJS += $(addprefix $(BUILD)/, $(repro_OBJS))
-
-$(EXE): $(OBJS)
-	$(LD) $(OBJS) -o $(EXE)
+parrot_OBJS += parrot.o
+parrot_OBJS := $(addprefix $(BUILD)/, $(parrot_OBJS))
 
 all: $(EXE)
 	@true
 
+$(BUILD)/repro: $(repro_OBJS)
+	$(LD) $< -o $@
+
+$(BUILD)/parrot: $(parrot_OBJS)
+	$(LD) $< -o $@
+
 clean:
 	rm -rf $(BUILD)
+

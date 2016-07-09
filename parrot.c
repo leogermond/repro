@@ -9,7 +9,7 @@ int main() {
 		if(read(3, &c, sizeof(c)) != sizeof(c)) continue;
 		i += 1;
 		if(i <= 4) {
-			len += c<<(4-i);
+			len += c<<(8*(4-i));
 		}
 
 		write(4, &c, sizeof(c));

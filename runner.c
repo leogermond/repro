@@ -7,6 +7,8 @@
 #include <time.h>
 #include <poll.h>
 #include <signal.h>
+#include <sys/stat.h>
+#include <sys/syscall.h>
 
 static const char *LOG_NAME = "runner";
 
@@ -43,6 +45,10 @@ struct timespec timespec_sub(struct timespec a, struct timespec b) {
 	return result;
 }
 
+void mutate(unsigned char pgm[1024]) {
+	return;
+}
+
 int send_program(int fd, const char *pgname) {
 	int ret;
 	FILE *fpgm = fopen(pgname, "rb");
@@ -62,6 +68,7 @@ int send_program(int fd, const char *pgname) {
 	while(read < pgmsz) {
 		size_t curread = fread(&pgm, sizeof(pgm[0]), sizeof(pgm), fpgm);
 		read += curread;
+		mutate(pgm);
 		write(fd, pgm, curread);
 	}
 	fclose(fpgm);
@@ -84,6 +91,8 @@ int main() {
 		exit(2);
 	}
 
+#define EXE "out/child"
+#define NEXE "out/child2"
 	int pid = fork();
 	struct timespec ts_start;
 	clock_gettime(CLOCK_MONOTONIC, &ts_start);
@@ -95,7 +104,7 @@ int main() {
 		close(fd_recv_prog[1]);
 		info("-> %d <- %d", fd_prog[0], fd_prog[1]);
 		char *args[] = {NULL}, *env[] = {NULL};
-		execve("build/asmparrot", args, env);
+		execve(EXE, args, env);
 
 		info("failed exec");
 		exit(0);
@@ -103,18 +112,19 @@ int main() {
 
 	close(fd_send_prog[0]);
 	close(fd_recv_prog[1]);
-	send_program(fd_send_prog[1], "build/asmparrot");
+	send_program(fd_send_prog[1], EXE);
 
 #define TIMEOUT_MS 10
 	int end = 0;
 	struct timespec ts_cur, ts_last_read = ts_start;
 	int received = 0, len_prog = 0;
-	FILE *fchild = fopen("out/child", "wb");
+	FILE *fchild = fopen(NEXE, "wb");
+	syscall(SYS_chmod, NEXE, 0777);
 	while(!end) {
 		clock_gettime(CLOCK_MONOTONIC, &ts_cur);
 		struct timespec ts_elapsed = timespec_sub(ts_cur, ts_last_read);
 		if(ts_elapsed.tv_nsec > TIMEOUT_MS * 1000 * 1000) {
-			err("more than %dms without any new data: killing child\n", TIMEOUT_MS);
+			err("more than %dms without any new data: killing child", TIMEOUT_MS);
 			kill(9, pid);
 			break;
 		}
@@ -137,7 +147,7 @@ int main() {
 		}
 	}
 	fclose(fchild);
-	info("written %d bytes\n", len_prog);
+	info("written %d bytes", len_prog);
 
 	clock_gettime(CLOCK_MONOTONIC, &ts_cur);
 	struct timespec ts_elapsed = timespec_sub(ts_cur, ts_start);

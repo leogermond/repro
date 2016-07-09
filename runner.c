@@ -66,7 +66,7 @@ int main() {
 		close(fd_recv_prog[1]);
 		info("-> %d <- %d", fd_prog[0], fd_prog[1]);
 		char *args[] = {NULL}, *env[] = {NULL};
-		execve("build/parrot", args, env);
+		execve("build/asmparrot", args, env);
 
 		info("failed exec");
 		exit(0);

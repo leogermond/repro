@@ -5,6 +5,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
+#include <poll.h>
+#include <signal.h>
 
 static const char *LOG_NAME = "runner";
 
@@ -81,20 +83,33 @@ int main() {
 	write(fd_send_prog[1], &sz_nbo, sizeof(sz_nbo));
 	write(fd_send_prog[1], SENT, sz);
 
-	while(1) {
-		unsigned char c;
-		int ret = read(fd_recv_prog[0], &c, sizeof(c));
-		if(ret == 0) {
-			break;
-		} if(ret != 1) {
-			err("could not read: %s\n", strerror(errno));
+#define TIMEOUT_MS 10
+	int end = 0;
+	struct timespec ts_cur, ts_last_read = ts_start;
+	int received = 0;
+	while(!end) {
+		clock_gettime(CLOCK_MONOTONIC, &ts_cur);
+		struct timespec ts_elapsed = timespec_sub(ts_cur, ts_last_read);
+		if(ts_elapsed.tv_nsec > TIMEOUT_MS * 1000 * 1000) {
+			err("more than %dms without any new data: killing child\n", TIMEOUT_MS);
+			kill(9, pid);
 			break;
 		}
-		info("%02x '%c'", c, isanum(c)?c:'.');
+		unsigned char c;
+		int ret = read(fd_recv_prog[0], &c, sizeof(c));
+		if(ret != 0 && ret != 1) {
+			err("could not read: %s\n", strerror(errno));
+			end = 1;
+			break;
+		}
+
+		if(ret > 0) {
+			received += ret;
+			clock_gettime(CLOCK_MONOTONIC, &ts_last_read);
+		}
 	}
-	struct timespec ts_end;
-	clock_gettime(CLOCK_MONOTONIC, &ts_end);
-	struct timespec ts_elapsed = timespec_sub(ts_end, ts_start);
-	info("exit %ld.%09lds", ts_elapsed.tv_sec, ts_elapsed.tv_nsec);
+	clock_gettime(CLOCK_MONOTONIC, &ts_cur);
+	struct timespec ts_elapsed = timespec_sub(ts_cur, ts_start);
+	info("exit: %d bytes, %ld.%09lds", received, ts_elapsed.tv_sec, ts_elapsed.tv_nsec);
 	exit(0);
 }

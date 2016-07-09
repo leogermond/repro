@@ -33,7 +33,7 @@ read:
 # shift = 8 * (4 - i)
 	mov $4, %r8b
 	sub %cl, %r8b
-	shl $3, %cl # 8 = 2^3
+	shl $3, %r8b # 8 = 2^3
 	mov %r8b, %cl
 
 # len += c << shift

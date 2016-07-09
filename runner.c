@@ -4,6 +4,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <time.h>
 
 static const char *LOG_NAME = "runner";
 
@@ -27,6 +28,19 @@ int isanum(char c) {
 	return c >= 0x20 && c < 0x7f;
 }
 
+struct timespec timespec_sub(struct timespec a, struct timespec b) {
+	struct timespec result;
+	result.tv_sec = a.tv_sec - b.tv_sec;
+	if(a.tv_nsec < b.tv_nsec) {
+		result.tv_nsec = a.tv_nsec + (1000 * 1000 * 1000 - b.tv_nsec);
+		result.tv_sec -= 1;
+	} else {
+		result.tv_nsec = a.tv_nsec - b.tv_nsec;
+	}
+
+	return result;
+}
+
 int main() {
 	int fd_send_prog[2], fd_recv_prog[2];
 	int ret = pipe(fd_send_prog);
@@ -42,6 +56,8 @@ int main() {
 	}
 
 	int pid = fork();
+	struct timespec ts_start;
+	clock_gettime(CLOCK_MONOTONIC, &ts_start);
 	if(!pid) {
 		LOG_NAME = "child";
 		close(fd_send_prog[1]);
@@ -71,7 +87,9 @@ int main() {
 		}
 		info("r: %02x '%c'", c, isanum(c)?c:'.');
 	}
-
-	info("exit");
+	struct timespec ts_end;
+	clock_gettime(CLOCK_MONOTONIC, &ts_end);
+	struct timespec ts_elapsed = timespec_sub(ts_end, ts_start);
+	info("exit %ld.%09lds", ts_elapsed.tv_sec, ts_elapsed.tv_nsec);
 	exit(0);
 }

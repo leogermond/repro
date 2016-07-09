@@ -43,6 +43,33 @@ struct timespec timespec_sub(struct timespec a, struct timespec b) {
 	return result;
 }
 
+int send_program(int fd, const char *pgname) {
+	int ret;
+	FILE *fpgm = fopen(pgname, "rb");
+	if(!fpgm) {
+		ret = ENOENT;
+		goto out;
+	}
+	fseek(fpgm, 0L, SEEK_END);
+	size_t pgmsz = ftell(fpgm);
+	fseek(fpgm, 0L, SEEK_SET);
+	info("%s %lu bytes", pgname, pgmsz);
+	unsigned char *pgmsz_b = (void*)&pgmsz;
+	size_t pgmsz_nbo = pgmsz_b[3] + (pgmsz_b[2]<<8) + (pgmsz_b[1]<<16) + (pgmsz_b[0]<<24);
+	write(fd, &pgmsz_nbo, 4);
+	unsigned char pgm[1024];
+	size_t read = 0;
+	while(read < pgmsz) {
+		size_t curread = fread(&pgm, sizeof(pgm[0]), sizeof(pgm), fpgm);
+		read += curread;
+		write(fd, pgm, curread);
+	}
+	fclose(fpgm);
+	ret = 0;
+out:
+	return ret;
+}
+
 int main() {
 	int fd_send_prog[2], fd_recv_prog[2];
 	int ret = pipe(fd_send_prog);
@@ -76,18 +103,13 @@ int main() {
 
 	close(fd_send_prog[0]);
 	close(fd_recv_prog[1]);
-#define SENT "coucou"
-	int sz = sizeof(SENT) - 1;
-	unsigned char *sz_b = (void*)&sz;
-	int sz_nbo = sz_b[3] + (sz_b[2]<<8) + (sz_b[1]<<16) + (sz_b[0]<<24);
-	write(fd_send_prog[1], &sz_nbo, sizeof(sz_nbo));
-	write(fd_send_prog[1], SENT, sz);
+	send_program(fd_send_prog[1], "build/asmparrot");
 
 #define TIMEOUT_MS 10
 	int end = 0;
 	struct timespec ts_cur, ts_last_read = ts_start;
 	int received = 0, len_prog = 0;
-	FILE *fchild = fopen("out/child", "w");
+	FILE *fchild = fopen("out/child", "wb");
 	while(!end) {
 		clock_gettime(CLOCK_MONOTONIC, &ts_cur);
 		struct timespec ts_elapsed = timespec_sub(ts_cur, ts_last_read);
@@ -110,7 +132,7 @@ int main() {
 			if(received <= 4) {
 				len_prog += c<<(8*(4-received));
 			} else {
-				fwrite(&c, ret, sizeof(char), fchild); 
+				fwrite(&c, sizeof(char), ret, fchild);
 			}
 		}
 	}

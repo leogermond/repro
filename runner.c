@@ -86,7 +86,8 @@ int main() {
 #define TIMEOUT_MS 10
 	int end = 0;
 	struct timespec ts_cur, ts_last_read = ts_start;
-	int received = 0;
+	int received = 0, len_prog = 0;
+	FILE *fchild = fopen("out/child", "w");
 	while(!end) {
 		clock_gettime(CLOCK_MONOTONIC, &ts_cur);
 		struct timespec ts_elapsed = timespec_sub(ts_cur, ts_last_read);
@@ -106,10 +107,18 @@ int main() {
 		if(ret > 0) {
 			received += ret;
 			clock_gettime(CLOCK_MONOTONIC, &ts_last_read);
+			if(received <= 4) {
+				len_prog += c<<(8*(4-received));
+			} else {
+				fwrite(&c, ret, sizeof(char), fchild); 
+			}
 		}
 	}
+	fclose(fchild);
+	info("written %d bytes\n", len_prog);
+
 	clock_gettime(CLOCK_MONOTONIC, &ts_cur);
 	struct timespec ts_elapsed = timespec_sub(ts_cur, ts_start);
-	info("exit: %d bytes, %ld.%09lds", received, ts_elapsed.tv_sec, ts_elapsed.tv_nsec);
+	info("exit: %ld.%09lds", ts_elapsed.tv_sec, ts_elapsed.tv_nsec);
 	exit(0);
 }

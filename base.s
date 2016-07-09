@@ -15,7 +15,7 @@ read:
         mov     $1, %rdx # 1 byte
         syscall
 
-# write byte back
+# write byte back (rsi already set correctly)
 	mov $1, %rax # write
 	mov $4, %rdi # 4
 	mov $1, %rdx # 1 byte

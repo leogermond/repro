@@ -46,24 +46,13 @@ int main() {
 		LOG_NAME = "child";
 		close(fd_send_prog[1]);
 		close(fd_recv_prog[0]);
-		int fd_prog[] = { fd_send_prog[0], fd_recv_prog[1] };
+		int fd_prog[] = { fd_send_prog[0], dup(fd_recv_prog[1]) };
+		close(fd_recv_prog[1]);
+		info("-> %d <- %d", fd_prog[0], fd_prog[1]);
+		char *args[] = {NULL}, *env[] = {NULL};
+		execve("build/parrot", args, env);
 
-		int len, i = 0;
-		while(1) {
-			char c;
-			if(read(fd_prog[0], &c, sizeof(c)) != sizeof(c)) continue;
-			i += 1;
-			if(i <= 4) {
-				len += c<<(4-i);
-			} else {
-				write(fd_prog[1], &c, sizeof(c));
-			}
-			if(i == len + 4) {
-				break;
-			}
-		}
-
-		info("exit");
+		info("failed exec");
 		exit(0);
 	}
 

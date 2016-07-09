@@ -85,7 +85,7 @@ int main() {
 			err("could not read: %s\n", strerror(errno));
 			break;
 		}
-		info("r: %02x '%c'", c, isanum(c)?c:'.');
+		info("%02x '%c'", c, isanum(c)?c:'.');
 	}
 	struct timespec ts_end;
 	clock_gettime(CLOCK_MONOTONIC, &ts_end);

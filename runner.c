@@ -74,10 +74,15 @@ int main() {
 
 	close(fd_send_prog[0]);
 	close(fd_recv_prog[1]);
-	write(fd_send_prog[1], "\0\0\0\6coucou", 10);
+#define SENT "coucou"
+	int sz = sizeof(SENT) - 1;
+	unsigned char *sz_b = (void*)&sz;
+	int sz_nbo = sz_b[3] + (sz_b[2]<<8) + (sz_b[1]<<16) + (sz_b[0]<<24);
+	write(fd_send_prog[1], &sz_nbo, sizeof(sz_nbo));
+	write(fd_send_prog[1], SENT, sz);
 
 	while(1) {
-		char c;
+		unsigned char c;
 		int ret = read(fd_recv_prog[0], &c, sizeof(c));
 		if(ret == 0) {
 			break;

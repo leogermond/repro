@@ -8,7 +8,7 @@ _start:
 	add r9, 0x100
 	mov byte [disp_data+2], ' '
 	mov rsi, disp_data
-	mov rdi, 0
+	mov rdi, 1
 disp_line:
 	add r8, 0x10
 disp_byte:

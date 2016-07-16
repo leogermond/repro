@@ -126,7 +126,7 @@ int main() {
 		char c[128];
 		rdlen = read(fd_cell_to_sup[0], c, sizeof(c));
 		if(rdlen > 0) {
-			printf("%d: %.*s\n", pid, rdlen, c);
+			printf("%.*s", rdlen, c);
 		}
 	}
 	

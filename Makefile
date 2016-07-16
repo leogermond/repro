@@ -1,5 +1,5 @@
 CFLAGS=-Wall -Werror
-LDFLAGS=-lrt
+LDFLAGS=
 
 CC=gcc $(CFLAGS) -c
 LD=gcc $(LDFLAGS)
@@ -22,6 +22,7 @@ EXE := $(addprefix $(BUILD)/, $(EXE))
 
 repro_OBJS += runner.o
 repro_OBJS := $(addprefix $(BUILD)/, $(repro_OBJS))
+repro_LDFLAGS += -lrt
 
 parrot_OBJS += parrot.o
 parrot_OBJS := $(addprefix $(BUILD)/, $(parrot_OBJS))
@@ -38,7 +39,7 @@ all: $(EXE)
 	@true
 
 $(BUILD)/repro: $(repro_OBJS)
-	$(LD) $< -o $@
+	$(LD) $(repro_LDFLAGS) $< -o $@
 
 $(BUILD)/parrot: $(parrot_OBJS)
 	$(LD) $< -o $@

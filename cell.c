@@ -14,13 +14,20 @@ int main() {
 	void *prog = mmap(NULL, 2 * PROG_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, shmfd, 2 * PROG_SIZE); 
 
 	dprintf(1,"rd=%p wr=%p prog=%p\n", shm_rd, shm_wr, prog);
+
+	FILE *f = fopen("/proc/self/maps", "r");
+	char fc[1024];
+	size_t flen;
+	while((flen = fread(fc, sizeof(char), sizeof(fc)/sizeof(char), f)) > 0) {
+		write(1, fc, flen);
+	}
 	char c;
 	while(1) {
 		while(read(0, &c, sizeof(c)) != sizeof(c)) {}
 
 		switch(c) {
 		case 'p':
-			write(1, "pong", 4);
+			write(1, "pong\n", 5);
 			break;
 		case 'q':
 			exit(0);

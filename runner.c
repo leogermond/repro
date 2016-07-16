@@ -9,6 +9,8 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
 
 static const char *LOG_NAME = "runner";
 
@@ -45,112 +47,89 @@ struct timespec timespec_sub(struct timespec a, struct timespec b) {
 	return result;
 }
 
-void mutate(unsigned char pgm[1024]) {
-	return;
+#define UUID_SIZE 36
+
+int uuid(char *buf) {
+	FILE *f = fopen("/proc/sys/kernel/random/uuid", "r");
+	ASSERT(f);
+	ASSERT(fread(buf, sizeof(char), UUID_SIZE, f) == UUID_SIZE);
+	fclose(f);
+	return 0;
 }
 
-int send_program(int fd, const char *pgname) {
-	int ret;
-	FILE *fpgm = fopen(pgname, "rb");
-	if(!fpgm) {
-		ret = ENOENT;
-		goto out;
-	}
-	fseek(fpgm, 0L, SEEK_END);
-	size_t pgmsz = ftell(fpgm);
-	fseek(fpgm, 0L, SEEK_SET);
-	info("%s %lu bytes", pgname, pgmsz);
-	unsigned char *pgmsz_b = (void*)&pgmsz;
-	size_t pgmsz_nbo = pgmsz_b[3] + (pgmsz_b[2]<<8) + (pgmsz_b[1]<<16) + (pgmsz_b[0]<<24);
-	write(fd, &pgmsz_nbo, 4);
-	unsigned char pgm[1024];
-	size_t read = 0;
-	while(read < pgmsz) {
-		size_t curread = fread(&pgm, sizeof(pgm[0]), sizeof(pgm), fpgm);
-		read += curread;
-		mutate(pgm);
-		write(fd, pgm, curread);
-	}
-	fclose(fpgm);
-	ret = 0;
-out:
-	return ret;
-}
+#define PAGE_SIZE 0x1000
+#define PROG_SIZE (10 * PAGE_SIZE)
 
 int main() {
-	int fd_send_prog[2], fd_recv_prog[2];
-	int ret = pipe(fd_send_prog);
+	char shm_name[UUID_SIZE + 2];
+	shm_name[0] = '/';
+	uuid(shm_name + 1);
+	shm_name[sizeof(shm_name) - sizeof(shm_name[0])] = '\0';
+	int shmfd = shm_open(shm_name, O_RDWR | O_TRUNC | O_CREAT, 0777);
+	info("shm %s => fd %d", shm_name, shmfd);
+	ftruncate(shmfd, 4 * PROG_SIZE);
+
+	ASSERT(shmfd != -1);
+	int fd_sup_to_cell[2], fd_cell_to_sup[2];
+	int ret = pipe(fd_cell_to_sup);
+	if(ret < 0) {
+		err("cannot create send pipe: %s\n", strerror(errno));
+		exit(2);
+	}
+	ret = pipe(fd_sup_to_cell);
 	if(ret < 0) {
 		err("cannot create send pipe: %s\n", strerror(errno));
 		exit(2);
 	}
 
-	ret = pipe(fd_recv_prog);
-	if(ret < 0) {
-		err("cannot create recv pipe: %s\n", strerror(errno));
-		exit(2);
-	}
-
-#define EXE "out/child"
-#define NEXE "out/child2"
 	int pid = fork();
 	struct timespec ts_start;
 	clock_gettime(CLOCK_MONOTONIC, &ts_start);
 	if(!pid) {
-		LOG_NAME = "child";
-		close(fd_send_prog[1]);
-		close(fd_recv_prog[0]);
-		int fd_prog[] = { fd_send_prog[0], dup(fd_recv_prog[1]) };
-		close(fd_recv_prog[1]);
-		info("-> %d <- %d", fd_prog[0], fd_prog[1]);
+		LOG_NAME = "cell";
+		info("removing close-on-exec flag from shm fd");
+		fcntl(shmfd, F_SETFD, 0);
+		info("closing file descriptors and redirecting to pipe");
+		close(fd_cell_to_sup[0]);
+		close(fd_sup_to_cell[1]);
+		dup2(fd_sup_to_cell[0], 0);
+		close(fd_sup_to_cell[0]);
+		info("radio silence");
+		dup2(fd_cell_to_sup[1], 1);
+		close(fd_cell_to_sup[1]);
+		close(2);
+
 		char *args[] = {NULL}, *env[] = {NULL};
-		execve(EXE, args, env);
-
-		info("failed exec");
-		exit(0);
+		execve("build/cell", args, env);
+		exit(1);
 	}
+	info("closing pipes");
+	close(fd_sup_to_cell[0]);
+	close(fd_cell_to_sup[1]);
 
-	close(fd_send_prog[0]);
-	close(fd_recv_prog[1]);
-	send_program(fd_send_prog[1], EXE);
+	info("opening shm segments");
+	void *shm_rd = mmap(NULL, PROG_SIZE, PROT_READ, MAP_SHARED, shmfd, PROG_SIZE);
+	void *shm_wr = mmap(NULL, PROG_SIZE, PROT_WRITE, MAP_SHARED, shmfd, 0);
+	info("read %p write %p", shm_rd, shm_wr);
 
-#define TIMEOUT_MS 10
-	int end = 0;
-	struct timespec ts_cur, ts_last_read = ts_start;
-	int received = 0, len_prog = 0;
-	FILE *fchild = fopen(NEXE, "wb");
-	syscall(SYS_chmod, NEXE, 0777);
-	while(!end) {
-		clock_gettime(CLOCK_MONOTONIC, &ts_cur);
-		struct timespec ts_elapsed = timespec_sub(ts_cur, ts_last_read);
-		if(ts_elapsed.tv_nsec > TIMEOUT_MS * 1000 * 1000) {
-			err("more than %dms without any new data: killing child", TIMEOUT_MS);
-			kill(9, pid);
-			break;
+	info("ping");
+	write(fd_sup_to_cell[1], "p", 1);
+
+	((unsigned char*)shm_wr)[0] = 0xc3;
+	write(fd_sup_to_cell[1], "lq", 2);
+	info("wait for answer");
+	int status = -1, rdlen = -1;
+	while(status == -1 || rdlen != 0) {
+		if(status == -1) {
+			waitpid(pid, &status, WNOHANG);
 		}
-		unsigned char c;
-		int ret = read(fd_recv_prog[0], &c, sizeof(c));
-		if(ret != 0 && ret != 1) {
-			err("could not read: %s\n", strerror(errno));
-			end = 1;
-			break;
-		}
-
-		if(ret > 0) {
-			received += ret;
-			clock_gettime(CLOCK_MONOTONIC, &ts_last_read);
-			if(received <= 4) {
-				len_prog += c<<(8*(4-received));
-			} else {
-				fwrite(&c, sizeof(char), ret, fchild);
-			}
+		char c[128];
+		rdlen = read(fd_cell_to_sup[0], c, sizeof(c));
+		if(rdlen > 0) {
+			printf("%d: %.*s\n", pid, rdlen, c);
 		}
 	}
-	fclose(fchild);
-	info("written %d bytes", len_prog);
-
-	clock_gettime(CLOCK_MONOTONIC, &ts_cur);
-	struct timespec ts_elapsed = timespec_sub(ts_cur, ts_start);
-	info("exit: %ld.%09lds", ts_elapsed.tv_sec, ts_elapsed.tv_nsec);
+	
+	info("exit, child = %d (status = %d)", pid, status);
 	exit(0);
 }

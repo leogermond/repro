@@ -7,24 +7,14 @@
 #include <sys/prctl.h>
 #include <linux/seccomp.h>
 #include <sys/syscall.h>
+#include <signal.h>
 
 #define PAGE_SIZE 0x1000
 #define PROG_SIZE (10*PAGE_SIZE)
-int main() {
-	int shmfd = 3;
-	void *shm_rd = mmap(NULL, PROG_SIZE, PROT_READ, MAP_SHARED, shmfd, 0);
-	void *shm_wr = mmap(NULL, PROG_SIZE, PROT_WRITE, MAP_SHARED, shmfd, PROG_SIZE);
-	void *prog = mmap(NULL, 2 * PROG_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, shmfd, 2 * PROG_SIZE); 
 
-	dprintf(1,"rd=%p wr=%p prog=%p\n", shm_rd, shm_wr, prog);
+void *shm_rd, *shm_wr, *prog;
 
-	FILE *f = fopen("/proc/self/maps", "r");
-	char fc[1024];
-	size_t flen;
-	while((flen = fread(fc, sizeof(char), sizeof(fc)/sizeof(char), f)) > 0) {
-		write(1, fc, flen);
-	}
-	prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT);
+void interpreter(void) {
 	char c;
 	while(1) {
 		while(read(0, &c, sizeof(c)) != sizeof(c)) {}
@@ -42,4 +32,21 @@ int main() {
 			break;
 		}
 	}
+}
+
+void interpreter_signal(int signum) {
+	interpreter();
+}
+
+int main() {
+	int shmfd = 3;
+	shm_rd = mmap(NULL, PROG_SIZE, PROT_READ, MAP_SHARED, shmfd, 0);
+	shm_wr = mmap(NULL, PROG_SIZE, PROT_WRITE, MAP_SHARED, shmfd, PROG_SIZE);
+	prog = mmap(NULL, 2 * PROG_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, shmfd, 2 * PROG_SIZE);
+
+	signal(SIGUSR1, interpreter_signal);
+
+	prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT);
+
+	interpreter();
 }

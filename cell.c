@@ -44,6 +44,10 @@ int main() {
 	shm_wr = mmap(NULL, PROG_SIZE, PROT_WRITE, MAP_SHARED, shmfd, PROG_SIZE);
 	prog = mmap(NULL, 2 * PROG_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, shmfd, 2 * PROG_SIZE);
 
+	mprotect(&shm_rd, sizeof(shm_rd), PROT_READ);
+	mprotect(&shm_wr, sizeof(shm_wr), PROT_READ);
+	mprotect(&prog, sizeof(prog), PROT_READ);
+
 	signal(SIGUSR1, interpreter_signal);
 
 	prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT);

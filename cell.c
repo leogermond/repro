@@ -4,6 +4,9 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <errno.h>
+#include <sys/prctl.h>
+#include <linux/seccomp.h>
+#include <sys/syscall.h>
 
 #define PAGE_SIZE 0x1000
 #define PROG_SIZE (10*PAGE_SIZE)
@@ -21,16 +24,17 @@ int main() {
 	while((flen = fread(fc, sizeof(char), sizeof(fc)/sizeof(char), f)) > 0) {
 		write(1, fc, flen);
 	}
+	prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT);
 	char c;
 	while(1) {
 		while(read(0, &c, sizeof(c)) != sizeof(c)) {}
-
+		
 		switch(c) {
 		case 'p':
 			write(1, "pong\n", 5);
 			break;
 		case 'q':
-			exit(0);
+			syscall(__NR_exit, EXIT_SUCCESS);
 			break;
 		case 'l':
 			memcpy(prog, shm_rd, PROG_SIZE);

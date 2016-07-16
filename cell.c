@@ -48,7 +48,11 @@ int main() {
 	mprotect(&shm_wr, sizeof(shm_wr), PROT_READ);
 	mprotect(&prog, sizeof(prog), PROT_READ);
 
-	signal(SIGUSR1, interpreter_signal);
+	signal(SIGINT, interpreter_signal);
+	signal(SIGTERM, interpreter_signal);
+	signal(SIGILL, interpreter_signal);
+	signal(SIGSEGV, interpreter_signal);
+	signal(SIGBUS, interpreter_signal);
 
 	prctl(PR_SET_SECCOMP, SECCOMP_MODE_STRICT);
 

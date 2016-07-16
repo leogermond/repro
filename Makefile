@@ -29,6 +29,7 @@ parrot_OBJS := $(addprefix $(BUILD)/, $(parrot_OBJS))
 
 cell_OBJS += cell.o
 cell_OBJS := $(addprefix $(BUILD)/, $(cell_OBJS))
+cell_LDFLAGS += -static
 
 asmparrot_ASM += base.s
 
@@ -45,7 +46,7 @@ $(BUILD)/parrot: $(parrot_OBJS)
 	$(LD) $< -o $@
 
 $(BUILD)/cell: $(cell_OBJS)
-	$(LD) $< -o $@
+	$(LD) $(cell_LDFLAGS) $< -o $@
 
 $(BUILD)/asmparrot: $(asmparrot_ASM)
 	$(AS) $< -o $@

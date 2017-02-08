@@ -13,6 +13,7 @@
 #include <sys/syscall.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <sys/prctl.h>
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
@@ -192,6 +193,10 @@ static int create_cell(struct cell *c) {
 	clock_gettime(CLOCK_MONOTONIC, &ts_start);
 	if(!pid) {
 		LOG_NAME = "cell";
+
+		/* kill on death of parent */
+		prctl(PR_SET_PDEATHSIG, SIGHUP);
+
 		info("keep shm on exec");
 		fcntl(shmfd, F_SETFD, 0);
 		info("closing file descriptors and redirecting to pipe");

@@ -74,6 +74,7 @@ struct cell {
 	pid_t pid;
 	int fd[2];
 	void *mem[2];
+	int generation;
 };
 
 enum cell_command {
@@ -164,11 +165,7 @@ static int program_cell(struct cell *c, const void *data) {
 	return 0;
 }
 
-int main(int argc, char **argv) {
-	if(argc >= 2 && strcmp(argv[1], "-v") == 0) {
-		verbose = 1;
-	}
-
+static int create_cell(struct cell *c) {
 	char shm_name[UUID_SIZE + 2];
 	shm_name[0] = '/';
 	uuid(shm_name + 1);
@@ -182,12 +179,12 @@ int main(int argc, char **argv) {
 	int ret = pipe2(fd_cell_to_sup, O_NONBLOCK);
 	if(ret < 0) {
 		err("cannot create send pipe: %s\n", strerror(errno));
-		exit(2);
+		exit(1);
 	}
 	ret = pipe2(fd_sup_to_cell, O_NONBLOCK);
 	if(ret < 0) {
 		err("cannot create send pipe: %s\n", strerror(errno));
-		exit(2);
+		exit(1);
 	}
 
 	int pid = fork();
@@ -217,31 +214,62 @@ int main(int argc, char **argv) {
 
 	info("opening shm segments");
 	void *shm_rd = mmap(NULL, PROG_SIZE, PROT_READ, MAP_SHARED, shmfd, PROG_SIZE);
-	void *shm_wr = mmap(NULL, PROG_SIZE, PROT_WRITE, MAP_SHARED, shmfd, 0);
-	struct cell c = {
+	void *shm_wr = mmap(NULL, PROG_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0);
+	shm_unlink(shm_name);
+	close(shmfd);
+
+	struct cell cs = {
 		pid,
 		{fd_cell_to_sup[0], fd_sup_to_cell[1]},
 		{shm_rd, shm_wr}
 	};
+	*c = cs;
+	return 0;
+}
 
-	info("wait for cell %d", c.pid);
+static void destroy_cell(struct cell *c) {
+	munmap(c->mem[0], PROG_SIZE);
+	munmap(c->mem[1], PROG_SIZE);
+	close(c->fd[0]);
+	close(c->fd[1]);
+}
+
+int main(int argc, char **argv) {
+	if(argc >= 2 && strcmp(argv[1], "-v") == 0) {
+		verbose = 1;
+	}
+
 	srand(2);
-	int status;
-	int a = 1;
-	unsigned char retprog[PROG_SIZE] = "\xc3";
-	while(c.pid != waitpid(c.pid, &status, WNOHANG)) {
+	struct cell c;
+	create_cell(&c);
+	while(1) {
+		int status;
+		int wpid = waitpid(c.pid, &status, WNOHANG);
+		if(wpid == c.pid) {
+			info("%d dead, resurrect as a new cell", c.pid);
+			destroy_cell(&c);
+			create_cell(&c);
+		}
+
 		if(check_cell_start(&c) == 0) {
 			info("ping %d", c.pid);
 			if(ping_cell(&c) != 0) {
 				err("cell did not answer to ping");
-				exit(1);
+				kill(SIGTERM, c.pid);
+			}
+			c.generation += 1;
+			if(c.generation == 1) {
+				info("random program and start cell %d", c.pid);
+				program_cell(&c, generate_random_program());
+			} else {
+				info("reproduce cell %d", c.pid);
+				program_cell(&c, c.mem[0]);
 			}
 
-			info("program and start cell %d", c.pid);
-			program_cell(&c, a?retprog:generate_random_program());
+			hd(c.mem[1], 64);
 		}
 	}
 
-	info("exit, child = %d (status = %d)", pid, status);
+	info("end of experiment");
 	exit(0);
 }

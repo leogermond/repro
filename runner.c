@@ -104,19 +104,15 @@ static int read_cell(struct cell *c, char *buffer, size_t buffer_len) {
 	return ret;
 }
 
-static int cell_expect(struct cell *c, char *expect) {
-	char buf[128];
-	int r;
-
-	size_t expected_len = strlen(expect);
-	size_t cmpi = 0;
-	while(cmpi != expected_len && (r = read_cell(c, buf, sizeof(buf))) > 0) {
-		if(strncmp(expect + cmpi, buf, MIN(r, expected_len - cmpi))) {
-			break;
-		}
-		cmpi += r;
+static int check_cell_start(struct cell *c) {
+	char start;
+	int ret = read_cell(c, &start, 1);
+	if(ret <= 0) {
+		goto out;
 	}
-	return (cmpi == expected_len)? 0:EIO;
+	ret = (start == CELL_RESP_START)? 0:EIO;
+out:
+	return ret;
 }
 
 static int ping_cell(struct cell *c) {
@@ -207,6 +203,11 @@ int main() {
 		{fd_cell_to_sup[0], fd_sup_to_cell[1]},
 		{shm_rd, shm_wr}
 	};
+
+	if(check_cell_start(&c) != 0) {
+		err("cell did not start");
+		exit(1);
+	}
 
 	info("ping %d", c.pid);
 	if(ping_cell(&c) != 0) {

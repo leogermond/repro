@@ -79,7 +79,7 @@ struct cell {
 enum cell_command {
 	CELL_CMD_PING = 'p',
 	CELL_CMD_QUIT = 'q',
-	CELL_CMD_LOAD = 'l'
+	CELL_CMD_LOAD = 'l',
 };
 
 enum cell_response {
@@ -105,10 +105,8 @@ static int read_cell(struct cell *c, char *buffer, size_t buffer_len) {
 		}
 	}
 
-	if(ret >= 0) {
-		dbg("message from %d: '%*s'", c->pid, ret, buffer);
-	} else {
-		dbg("error from %d: %d", c->pid, ret);
+	if(ret > 0) {
+		dbg("message from %d: '%.*s'", c->pid, ret, buffer);
 	}
 
 	return ret;
@@ -150,10 +148,18 @@ out:
 	return ret;
 }
 
-static int program_cell(struct cell *c, const void *data, size_t len) {
+static void *generate_random_program(void) {
+	int *prog = malloc(PROG_SIZE);
+	for(int i = 0; i < PROG_SIZE/sizeof(*prog); i++) {
+		prog[i] = rand();
+	}
+	return prog;
+}
+
+static int program_cell(struct cell *c, const void *data) {
 	halt_cell(c);
 	ASSERT(ping_cell(c) == 0);
-	memcpy(c->mem[1], data, len);
+	memcpy(c->mem[1], data, PROG_SIZE);
 	send_cell_command(c, CELL_CMD_LOAD);
 	return 0;
 }
@@ -218,25 +224,21 @@ int main(int argc, char **argv) {
 		{shm_rd, shm_wr}
 	};
 
-	if(check_cell_start(&c) != 0) {
-		err("cell did not start");
-		exit(1);
-	}
-
-	info("ping %d", c.pid);
-	if(ping_cell(&c) != 0) {
-		err("cell did not answer to ping");
-		exit(1);
-	}
-
-	info("program cell %d", c.pid);
-	program_cell(&c, "\x3c", 1);
-
-	send_cell_command(&c, CELL_CMD_QUIT);
-
 	info("wait for cell %d", c.pid);
-	int status = -1;
-	while(pid != waitpid(pid, &status, 0)) {}
+	srand(2);
+	int status;
+	while(c.pid != waitpid(c.pid, &status, WNOHANG)) {
+		if(check_cell_start(&c) == 0) {
+			info("ping %d", c.pid);
+			if(ping_cell(&c) != 0) {
+				err("cell did not answer to ping");
+				exit(1);
+			}
+
+			info("program and start cell %d", c.pid);
+			program_cell(&c, generate_random_program());
+		}
+	}
 
 	info("exit, child = %d (status = %d)", pid, status);
 	exit(0);

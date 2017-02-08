@@ -212,7 +212,7 @@ int main() {
 	info("ping %d", c.pid);
 	if(ping_cell(&c) != 0) {
 		err("cell did not answer to ping");
-		exit(2);
+		exit(1);
 	}
 
 	info("program cell %d", c.pid);

@@ -17,10 +17,12 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
 static const char *LOG_NAME = "runner";
+static int verbose = 0;
 
 #define err(f,...) dprintf(2, "\033[31;1me\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
 #define err_loc(f,...) err("%s:%d "f, __FILE__, __LINE__, ##__VA_ARGS__)
 #define info(f,...) printf("\033[32mi\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
+#define dbg(f,...) if(verbose) printf("\033[34md\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
 
 #define ASSERT(c,...) if(!(c)) err_loc("assert "#c" failed " __VA_ARGS__)
 
@@ -101,6 +103,12 @@ static int read_cell(struct cell *c, char *buffer, size_t buffer_len) {
 		}
 	}
 
+	if(ret >= 0) {
+		dbg("message from %d: '%*s'", c->pid, ret, buffer);
+	} else {
+		dbg("error from %d: %d", c->pid, ret);
+	}
+
 	return ret;
 }
 
@@ -148,7 +156,11 @@ static int program_cell(struct cell *c, const void *data, size_t len) {
 	return 0;
 }
 
-int main() {
+int main(int argc, char **argv) {
+	if(argc >= 2 && strcmp(argv[1], "-v") == 0) {
+		verbose = 1;
+	}
+
 	char shm_name[UUID_SIZE + 2];
 	shm_name[0] = '/';
 	uuid(shm_name + 1);

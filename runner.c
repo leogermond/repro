@@ -19,10 +19,12 @@
 static const char *LOG_NAME = "runner";
 static int verbose = 0;
 
-#define err(f,...) dprintf(2, "\033[31;1me\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
+#define dlog(d,color,id,f,...) dprintf(d, "\033["color"m"id"\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
+
+#define err(f,...) dlog(2, "31;1", "e", f, ##__VA_ARGS__)
 #define err_loc(f,...) err("%s:%d "f, __FILE__, __LINE__, ##__VA_ARGS__)
-#define info(f,...) printf("\033[32mi\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
-#define dbg(f,...) if(verbose) printf("\033[34md\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
+#define info(f,...) dlog(1,"32", "i", f, ##__VA_ARGS__)
+#define dbg(f,...) if(verbose) dlog(1, "34", "d", f, ##__VA_ARGS__)
 
 #define ASSERT(c,...) if(!(c)) err_loc("assert "#c" failed " __VA_ARGS__)
 

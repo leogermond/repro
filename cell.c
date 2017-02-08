@@ -16,12 +16,13 @@ void *shm_rd, *shm_wr, *prog;
 
 void interpreter(void) {
 	char c;
+	write(1, "s", 1);
 	while(1) {
 		while(read(0, &c, sizeof(c)) != sizeof(c)) {}
 		
 		switch(c) {
 		case 'p':
-			write(1, "pong\n", 5);
+			write(1, "p", 1);
 			break;
 		case 'q':
 			syscall(__NR_exit, EXIT_SUCCESS);

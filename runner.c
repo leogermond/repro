@@ -175,7 +175,7 @@ int main() {
 	clock_gettime(CLOCK_MONOTONIC, &ts_start);
 	if(!pid) {
 		LOG_NAME = "cell";
-		info("removing close-on-exec flag from shm fd");
+		info("keep shm on exec");
 		fcntl(shmfd, F_SETFD, 0);
 		info("closing file descriptors and redirecting to pipe");
 		close(fd_cell_to_sup[0]);

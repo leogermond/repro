@@ -175,7 +175,7 @@ int main(int argc, char **argv) {
 	shm_name[sizeof(shm_name) - sizeof(shm_name[0])] = '\0';
 	int shmfd = shm_open(shm_name, O_RDWR | O_TRUNC | O_CREAT, 0777);
 	info("shm %s => fd %d", shm_name, shmfd);
-	ftruncate(shmfd, 4 * PROG_SIZE);
+	ftruncate(shmfd, 2 * PROG_SIZE);
 
 	ASSERT(shmfd != -1);
 	int fd_sup_to_cell[2], fd_cell_to_sup[2];
@@ -227,6 +227,8 @@ int main(int argc, char **argv) {
 	info("wait for cell %d", c.pid);
 	srand(2);
 	int status;
+	int a = 1;
+	unsigned char retprog[PROG_SIZE] = "\xc3";
 	while(c.pid != waitpid(c.pid, &status, WNOHANG)) {
 		if(check_cell_start(&c) == 0) {
 			info("ping %d", c.pid);
@@ -236,7 +238,7 @@ int main(int argc, char **argv) {
 			}
 
 			info("program and start cell %d", c.pid);
-			program_cell(&c, generate_random_program());
+			program_cell(&c, a?retprog:generate_random_program());
 		}
 	}
 

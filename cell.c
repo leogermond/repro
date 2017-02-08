@@ -12,7 +12,7 @@
 #define PAGE_SIZE 0x1000
 #define PROG_SIZE (10*PAGE_SIZE)
 
-void *shm_rd, *shm_wr, *prog;
+void *shm_rd, *shm_wr;
 
 void interpreter(void) {
 	char c;
@@ -28,8 +28,8 @@ void interpreter(void) {
 			syscall(__NR_exit, EXIT_SUCCESS);
 			break;
 		case 'l':
-			memcpy(prog, shm_rd, PROG_SIZE);
-			((void(*)(void))prog)();
+			((void(*)(void))shm_rd)();
+			write(1, "s", 1);
 			break;
 		}
 	}
@@ -41,13 +41,11 @@ void interpreter_signal(int signum) {
 
 int main() {
 	int shmfd = 3;
-	shm_rd = mmap(NULL, PROG_SIZE, PROT_READ, MAP_SHARED, shmfd, 0);
+	shm_rd = mmap(NULL, PROG_SIZE, PROT_READ | PROT_EXEC, MAP_SHARED, shmfd, 0);
 	shm_wr = mmap(NULL, PROG_SIZE, PROT_WRITE, MAP_SHARED, shmfd, PROG_SIZE);
-	prog = mmap(NULL, 2 * PROG_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, shmfd, 2 * PROG_SIZE);
 
 	mprotect(&shm_rd, sizeof(shm_rd), PROT_READ);
 	mprotect(&shm_wr, sizeof(shm_wr), PROT_READ);
-	mprotect(&prog, sizeof(prog), PROT_READ);
 
 	signal(SIGINT, interpreter_signal);
 	signal(SIGTERM, interpreter_signal);

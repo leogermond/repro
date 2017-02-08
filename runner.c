@@ -18,7 +18,7 @@
 
 static const char *LOG_NAME = "runner";
 
-#define err(f,...) printf("\033[31;1me\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
+#define err(f,...) dprintf(2, "\033[31;1me\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
 #define err_loc(f,...) err("%s:%d "f, __FILE__, __LINE__, ##__VA_ARGS__)
 #define info(f,...) printf("\033[32mi\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
 

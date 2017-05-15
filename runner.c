@@ -20,7 +20,7 @@
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof(*(a)))
 
 static const char *LOG_NAME = "runner";
-static int verbose = 1;
+static int verbose = 0;
 
 #define dlog(d,color,id,f,...) dprintf(d, "\033["color"m"id"\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
 
@@ -31,15 +31,19 @@ static int verbose = 1;
 
 #define ASSERT(c,...) if(!(c)) err_loc("assert "#c" failed " __VA_ARGS__)
 
-void hd(void *data, size_t len) {
+void dhd(int d, void *data, size_t len) {
 	int i;
 	for(i = 0; i < len; i++) {
-		if(i%16 == 0) printf("%08x  ", i);
-		printf("%02x ", ((unsigned char*)data)[i]);
-		if(i%16 == 15) printf("\n");
-		else if(i%8 == 7) printf(" ");
+		if(i%16 == 0) dprintf(d, "%08x  ", i);
+		dprintf(d, "%02x ", ((unsigned char*)data)[i]);
+		if(i%16 == 15) dprintf(d, "\n");
+		else if(i%8 == 7) dprintf(d, " ");
 	}
-	if(i%16 != 0) printf("\n");
+	if(i%16 != 0) dprintf(d, "\n");
+}
+
+void hd(void *data, size_t len) {
+	dhd(1, data, len);
 }
 
 int isanum(char c) {
@@ -151,6 +155,23 @@ static int halt_cell(struct cell *c) {
 	ret = (start == CELL_RESP_START)? 0:EIO;
 out:
 	return ret;
+}
+
+static int save_cell(struct cell *c) {
+	char fname[21 + UUID_SIZE];
+	sprintf(fname, "bestiary/%u_", c->generation);
+	uuid(fname + strlen(fname));
+	FILE *f = fopen(fname, "w+");
+	if(f) {
+		fwrite(c->proto, 1, PROG_SIZE, f);
+		fclose(f);
+
+		info("saved as %s", fname);
+		return 0;
+	} else {
+		err("could not open %s", fname);
+		return EIO;
+	}
 }
 
 static void *generate_random_program(void) {
@@ -296,6 +317,10 @@ int main(int argc, char **argv) {
 					info(">>>>>>>>>>>> MAX GENERATION %d >>>>>>>>>>", max_generation);
 					hd(c->proto, 64);
 					memcpy(best, c->proto, PROG_SIZE);
+
+					if(c->generation > 2) {
+						save_cell(c);
+					}
 				}
 
 				if(c->generation == 1) {

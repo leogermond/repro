@@ -14,11 +14,13 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <sys/prctl.h>
+#include <limits.h>
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof(*(a)))
 
 static const char *LOG_NAME = "runner";
-static int verbose = 0;
+static int verbose = 1;
 
 #define dlog(d,color,id,f,...) dprintf(d, "\033["color"m"id"\033[0m %s: "f"\n", LOG_NAME, ##__VA_ARGS__)
 
@@ -76,6 +78,7 @@ struct cell {
 	int fd[2];
 	void *mem[2];
 	int generation;
+	void *proto;
 };
 
 enum cell_command {
@@ -90,7 +93,7 @@ enum cell_response {
 };
 
 static int send_cell_command(struct cell *c, char command) {
-	info("cell %d: command %c", c->pid, command);
+	dbg("cell %d: command %c", c->pid, command);
 	return write(c->fd[1], &command, 1);
 }
 
@@ -139,7 +142,7 @@ out:
 }
 
 static int halt_cell(struct cell *c) {
-	info("halt cell %d", c->pid);
+	dbg("halt cell %d", c->pid);
 	kill(c->pid, SIGINT);
 	char start;
 	int ret = read_cell(c, &start, 1);
@@ -158,7 +161,21 @@ static void *generate_random_program(void) {
 	return prog;
 }
 
+static void *generate_random_program_from(const void *proto) {
+	int *prog = malloc(PROG_SIZE);
+	memcpy(prog, proto, PROG_SIZE);
+	for(int i = 0; i < PROG_SIZE/(sizeof(int)*100); i++) {
+		if(rand() < INT_MAX/10) {
+			for(int j = 0; j < 100/sizeof(int); j++) {
+				prog[i*100+j] = rand();
+			}
+		}
+	}
+	return prog;
+}
+
 static int program_cell(struct cell *c, const void *data) {
+	dbg("program cell\n");
 	halt_cell(c);
 	ASSERT(ping_cell(c) == 0);
 	memcpy(c->mem[1], data, PROG_SIZE);
@@ -172,7 +189,7 @@ static int create_cell(struct cell *c) {
 	uuid(shm_name + 1);
 	shm_name[sizeof(shm_name) - sizeof(shm_name[0])] = '\0';
 	int shmfd = shm_open(shm_name, O_RDWR | O_TRUNC | O_CREAT, 0777);
-	info("shm %s => fd %d", shm_name, shmfd);
+	dbg("shm %s => fd %d", shm_name, shmfd);
 	ftruncate(shmfd, 2 * PROG_SIZE);
 
 	ASSERT(shmfd != -1);
@@ -197,14 +214,14 @@ static int create_cell(struct cell *c) {
 		/* kill on death of parent */
 		prctl(PR_SET_PDEATHSIG, SIGHUP);
 
-		info("keep shm on exec");
+		dbg("keep shm on exec");
 		fcntl(shmfd, F_SETFD, 0);
-		info("closing file descriptors and redirecting to pipe");
+		dbg("closing file descriptors and redirecting to pipe");
 		close(fd_cell_to_sup[0]);
 		close(fd_sup_to_cell[1]);
 		dup2(fd_sup_to_cell[0], 0);
 		close(fd_sup_to_cell[0]);
-		info("radio silence");
+		dbg("radio silence");
 		dup2(fd_cell_to_sup[1], 1);
 		close(fd_cell_to_sup[1]);
 		close(2);
@@ -213,11 +230,10 @@ static int create_cell(struct cell *c) {
 		execve("build/cell", args, env);
 		exit(1);
 	}
-	info("closing pipes");
 	close(fd_sup_to_cell[0]);
 	close(fd_cell_to_sup[1]);
 
-	info("opening shm segments");
+	dbg("opening shm segments");
 	void *shm_rd = mmap(NULL, PROG_SIZE, PROT_READ, MAP_SHARED, shmfd, PROG_SIZE);
 	void *shm_wr = mmap(NULL, PROG_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shmfd, 0);
 	shm_unlink(shm_name);
@@ -245,33 +261,52 @@ int main(int argc, char **argv) {
 	}
 
 	srand(2);
-	struct cell c;
-	create_cell(&c);
+	struct cell dish[1];
+	for(int i = 0; i < ARRAY_SIZE(dish); i++) {
+		create_cell(&dish[i]);
+	}
+
+	int max_generation = 1;
+	char best[PROG_SIZE];
+	memcpy(best, generate_random_program(), sizeof(best));
 	while(1) {
 		int status;
-		int wpid = waitpid(c.pid, &status, WNOHANG);
-		if(wpid == c.pid) {
-			info("%d dead, resurrect as a new cell", c.pid);
-			destroy_cell(&c);
-			create_cell(&c);
-		}
-
-		if(check_cell_start(&c) == 0) {
-			info("ping %d", c.pid);
-			if(ping_cell(&c) != 0) {
-				err("cell did not answer to ping");
-				kill(SIGTERM, c.pid);
-			}
-			c.generation += 1;
-			if(c.generation == 1) {
-				info("random program and start cell %d", c.pid);
-				program_cell(&c, generate_random_program());
-			} else {
-				info("reproduce cell %d", c.pid);
-				program_cell(&c, c.mem[0]);
+		int pid = waitpid(-1, &status, WNOHANG);
+		for(int i = 0; i < ARRAY_SIZE(dish); i++) {
+			info("cell %d", i);
+			struct cell *c = &dish[i];
+			if(pid != 0) {
+				if(pid == c->pid) {
+					info("dead, resurrect as a new cell");
+					destroy_cell(c);
+					create_cell(c);
+				}
 			}
 
-			hd(c.mem[1], 64);
+			if(check_cell_start(c) == 0) {
+				dbg("ping %d", i);
+				if(ping_cell(c) != 0) {
+					err("no answer to ping");
+					kill(SIGTERM, c->pid);
+				}
+				c->generation += 1;
+				info("generation %d", c->generation);
+				if(c->generation > max_generation) {
+					max_generation = c->generation;
+					info(">>>>>>>>>>>> MAX GENERATION %d >>>>>>>>>>", max_generation);
+					hd(c->proto, 64);
+					memcpy(best, c->proto, PROG_SIZE);
+				}
+
+				if(c->generation == 1) {
+					info("random program and start cell");
+					c->proto = generate_random_program_from(best);
+					program_cell(c, c->proto);
+				} else {
+					info("reproduce cell");
+					program_cell(c, c->mem[0]);
+				}
+			}
 		}
 	}
 
